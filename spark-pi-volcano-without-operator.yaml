@@ -1,0 +1,60 @@
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+  name: spark-job
+  namespace: default
+spec:
+  minAvailable: 3
+  schedulerName: volcano
+  plugins:
+    env: []
+    svc: []
+  policies:
+    - event: PodEvicted
+      action: RestartJob
+  tasks:
+    - name: "driver"
+      replicas: 1
+      template:
+        spec:
+          #priorityClass: "master-pri"
+          containers:
+            - command:
+                - sh
+                - -c
+                - |
+                  DRIVER_HOST=`cat /etc/volcano/driver.host | sed 's/$/&:2222/g' | tr "\n" ","`;
+                  EXECUTER_HOST=`cat /etc/volcano/worker.host | sed 's/$/&:2222/g' | tr "\n" ","`;
+                  /opt/spark/bin/spark-submit --conf spark.driver.bindAddress=${DRIVER_HOST} --deploy-mode client --properties-file /opt/spark/conf/spark.properties --class org.apache.spark.examples.SparkPi local:///opt/spark/examples/jars/spark-examples_2.12-3.1.1.jar
+              image: kubespark/spark-driver:v2.2.0-kubernetes-0.5.0
+              name: driver
+              ports:
+                - containerPort: 2222
+                  name: driver-port
+              resources:
+                requests:
+                  cpu: 250m
+              workingDir: /opt/tf-benchmarks/scripts/tf_cnn_benchmarks
+          restartPolicy: OnFailure
+    - name: "executor"
+      replicas: 2
+      template:
+        spec:
+          containers:
+            - command:
+                - sh
+                - -c
+                - |
+                  DRIVER_HOST=`cat /etc/volcano/executor.host | sed 's/$/&:2222/g' | tr "\n" ","`;
+                  EXECUTER_HOST=`cat /etc/volcano/worker.host | sed 's/$/&:2222/g' | tr "\n" ","`;
+                  /opt/spark/bin/spark-submit --conf spark.driver.bindAddress=${DRIVER_HOST} --deploy-mode client --properties-file /opt/spark/conf/spark.properties --class org.apache.spark.examples.SparkPi local:///opt/spark/examples/jars/spark-examples_2.12-3.1.1.jar
+              image: kubespark/spark-executor:v2.2.0-kubernetes-0.5.0
+              name: executor
+              ports:
+                - containerPort: 2222
+                  name: executor-port
+              resources:
+                requests:
+                  cpu: 250m
+              workingDir: /opt/tf-benchmarks/scripts/tf_cnn_benchmarks
+          restartPolicy: OnFailure
